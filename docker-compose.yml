@@ -170,30 +170,34 @@ services:
           echo "✅ Admin user created successfully!";
           echo "   Username: ${DREMIO_ADMIN_USERNAME:-admin}";
           echo "   Password: ${DREMIO_ADMIN_PASSWORD:-password1}";
-          TOKEN=$$(echo "$$body" | jq -r ".token");
         elif [ "$$http_code" = "400" ]; then
           echo "ℹ️  Admin user already exists (HTTP 400)";
-          echo "Logging in to get token...";
-          login_response=$$(curl -s -w "\n%{http_code}" -X POST "http://dremio:9047/apiv2/login" \
-            -H "Content-Type: application/json" \
-            --data-raw "{\"userName\":\"${DREMIO_ADMIN_USERNAME:-admin}\",\"password\":\"${DREMIO_ADMIN_PASSWORD:-password1}\"}");
-          login_code=$$(echo "$$login_response" | tail -n1);
-          login_body=$$(echo "$$login_response" | head -n-1);
-          if [ "$$login_code" = "200" ]; then
-            TOKEN=$$(echo "$$login_body" | jq -r ".token");
-            echo "✅ Login successful";
-          else
-            echo "❌ Login failed (HTTP $$login_code): $$login_body";
-            exit 1;
-          fi;
         else
           echo "⚠️  Unexpected response (HTTP $$http_code): $$body";
           exit 1;
         fi;
 
+        echo "";
+        echo "Logging in to get token...";
+        sleep 2;
+        login_response=$$(curl -s -w "\n%{http_code}" -X POST "http://dremio:9047/apiv2/login" \
+          -H "Content-Type: application/json" \
+          --data-raw "{\"userName\":\"${DREMIO_ADMIN_USERNAME:-admin}\",\"password\":\"${DREMIO_ADMIN_PASSWORD:-password1}\"}");
+        login_code=$$(echo "$$login_response" | tail -n1);
+        login_body=$$(echo "$$login_response" | head -n-1);
+
+        if [ "$$login_code" = "200" ]; then
+          TOKEN=$$(echo "$$login_body" | jq -r ".token");
+          echo "✅ Login successful";
+        else
+          echo "❌ Login failed (HTTP $$login_code): $$login_body";
+          exit 1;
+        fi;
+
         echo "Token extracted: $${TOKEN:0:20}...";
         if [ -z "$$TOKEN" ] || [ "$$TOKEN" = "null" ]; then
-          echo "❌ Failed to extract token";
+          echo "❌ Failed to extract token from login response";
+          echo "Response body: $$login_body";
           exit 1;
         fi;
 

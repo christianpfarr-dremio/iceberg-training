@@ -47,6 +47,19 @@ jobs:
         run: |
           curl -f http://localhost:9047 || exit 1
 
+      - name: Debug - Show all containers
+        run: |
+          echo "=== All containers ==="
+          docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+          echo ""
+          echo "=== Docker Compose services ==="
+          docker-compose ps
+
+      - name: Debug - Show dremio logs
+        run: |
+          echo "=== Dremio logs (last 50 lines) ==="
+          docker logs dremio --tail 50
+
       - name: Wait for Dremio initialization (dremio-init container)
         run: |
           echo "Waiting for dremio-init container to complete..."
