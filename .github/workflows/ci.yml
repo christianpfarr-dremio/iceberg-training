@@ -47,10 +47,61 @@ jobs:
         run: |
           curl -f http://localhost:9047 || exit 1
 
-      - name: Wait for Dremio initialization
+      - name: Wait for Dremio initialization (dremio-init container)
         run: |
-          echo "Waiting for Dremio to complete initialization..."
-          sleep 30
+          echo "Waiting for dremio-init container to complete..."
+          for i in {1..60}; do
+            status=$(docker inspect -f '{{.State.Status}}' dremio-init 2>/dev/null || echo "not_found")
+            if [ "$status" = "exited" ]; then
+              exit_code=$(docker inspect -f '{{.State.ExitCode}}' dremio-init)
+              if [ "$exit_code" = "0" ]; then
+                echo "✅ dremio-init completed successfully!"
+                docker logs dremio-init
+                break
+              else
+                echo "❌ dremio-init failed with exit code $exit_code"
+                docker logs dremio-init
+                exit 1
+              fi
+            fi
+            echo "Waiting for dremio-init... ($i/60) - Status: $status"
+            sleep 2
+          done
+
+          # Final check
+          final_status=$(docker inspect -f '{{.State.Status}}' dremio-init 2>/dev/null || echo "not_found")
+          if [ "$final_status" != "exited" ]; then
+            echo "❌ dremio-init did not complete in time"
+            docker logs dremio-init
+            exit 1
+          fi
+
+      - name: Verify Nessie catalog is available
+        run: |
+          echo "Verifying Nessie catalog source..."
+          # Login to get token
+          response=$(curl -s -X POST "http://localhost:9047/apiv2/login" \
+            -H "Content-Type: application/json" \
+            --data-raw '{"userName":"admin","password":"password1"}')
+          token=$(echo "$response" | jq -r '.token')
+
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "❌ Failed to login to Dremio"
+            exit 1
+          fi
+
+          # Check if Nessie source exists
+          sources=$(curl -s -X GET "http://localhost:9047/api/v3/catalog" \
+            -H "Authorization: _dremio$token")
+
+          if echo "$sources" | jq -e '.data[] | select(.path[0] == "nessie")' > /dev/null; then
+            echo "✅ Nessie catalog source is available"
+          else
+            echo "❌ Nessie catalog source not found"
+            echo "Available sources:"
+            echo "$sources" | jq '.data[].path'
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
