@@ -5,10 +5,21 @@
 version: "3"
 
 services:
+  # Init container to fix Nessie volume permissions
+  nessie-init:
+    image: alpine:latest
+    container_name: nessie-init
+    command: sh -c "adduser -D -u 185 default && chown -R default:root /data && chmod -R 775 /data"
+    volumes:
+      - nessie-data:/data
+
   # Nessie Catalog Server Using RocksDB (Persistent Storage)
   nessie:
     image: projectnessie/nessie:latest
     container_name: nessie
+    depends_on:
+      nessie-init:
+        condition: service_completed_successfully
     environment:
       - QUARKUS_OIDC_ENABLED=false
       - NESSIE_SERVER_AUTHENTICATION_ENABLED=false

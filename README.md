@@ -10,8 +10,10 @@ This setup provides a complete local environment for Apache Iceberg training wit
 
 ✅ **Persistent Data Storage** - All configurations and data survive restarts
 ✅ **RocksDB Backend for Nessie** - Instead of in-memory store
+✅ **Proper File Permissions** - Fixed Nessie volume ownership (UID 185)
 ✅ **Disabled Authentication** - No OIDC warnings
 ✅ **Docker Volumes** - Automatic data persistence for all services
+✅ **Tested Persistence** - Verified that tables and configurations survive container restarts
 
 ## 📋 Prerequisites
 
@@ -112,13 +114,26 @@ Services are ready when:
 
 ## 💾 Persistent Data
 
-All data is stored in Docker volumes:
+All data is stored in Docker volumes and survives container restarts:
 
-| Service | Volume Name | Stores |
-|---------|-------------|--------|
-| Nessie | `iceberg-training_nessie-data` | Catalog metadata, branches, commits |
-| MinIO | `iceberg-training_minio-data` | S3 objects, Iceberg table data |
-| Dremio | `iceberg-training_dremio-data` | Users, data sources, reflections |
+| Service | Volume Name | Stores | Owner |
+|---------|-------------|--------|-------|
+| Nessie | `iceberg-training_nessie-data` | Catalog metadata, branches, commits | UID 185 (default) |
+| MinIO | `iceberg-training_minio-data` | S3 objects, Iceberg table data | UID 1000 (minio-user) |
+| Dremio | `iceberg-training_dremio-data` | Users, data sources, reflections | UID 999 (dremio) |
+
+### How Persistence Works
+
+1. **Nessie**: Uses RocksDB to store catalog metadata in `/tmp/nessie-rocksdb-store/`
+   - An init container creates the volume with correct permissions (UID 185)
+   - All branches, commits, and table metadata are persisted
+
+2. **MinIO**: Stores all S3 objects (Iceberg data files) in `/data`
+   - Parquet files, metadata files, and manifest files are persisted
+
+3. **Dremio**: Stores user accounts, data sources, and query history in `/opt/dremio/data`
+   - Your Nessie source configuration is persisted
+   - No need to reconfigure after restart
 
 ### Managing Volumes
 
@@ -128,6 +143,9 @@ docker volume ls
 
 # Inspect volume details
 docker volume inspect iceberg-training_nessie-data
+
+# Check Nessie data files
+docker exec nessie ls -lah /tmp/nessie-rocksdb-store/
 
 # Delete all data and start fresh
 docker-compose down -v
@@ -171,10 +189,14 @@ docker exec -it dremio /bin/bash
 ## 🐛 Troubleshooting
 
 ### Nessie shows OIDC warnings
-✅ **Solved** - The warnings are harmless and don't affect functionality.
+✅ **Solved** - Authentication is disabled via `QUARKUS_OIDC_ENABLED=false`.
 
 ### Dremio forgets configurations after restart
-✅ **Solved** - Persistent volumes are configured.
+✅ **Solved** - Persistent volumes are configured for all services.
+
+### Nessie volume permission errors
+✅ **Solved** - Init container creates proper user (UID 185) matching Nessie's default user.
+The Nessie image uses user `default` (UID 185, GID 0) in versions < 0.96.0.
 
 ### Port already in use
 ```bash
