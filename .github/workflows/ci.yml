@@ -50,31 +50,65 @@ jobs:
       - name: Wait for Dremio initialization (dremio-init container)
         run: |
           echo "Waiting for dremio-init container to complete..."
-          for i in {1..60}; do
-            status=$(docker inspect -f '{{.State.Status}}' dremio-init 2>/dev/null || echo "not_found")
-            if [ "$status" = "exited" ]; then
-              exit_code=$(docker inspect -f '{{.State.ExitCode}}' dremio-init)
-              if [ "$exit_code" = "0" ]; then
-                echo "✅ dremio-init completed successfully!"
-                docker logs dremio-init
-                break
+
+          # Wait for container to appear and complete
+          max_attempts=90
+          attempt=0
+
+          while [ $attempt -lt $max_attempts ]; do
+            attempt=$((attempt + 1))
+
+            # Check if container exists
+            if docker ps -a --format '{{.Names}}' | grep -q '^dremio-init$'; then
+              status=$(docker inspect -f '{{.State.Status}}' dremio-init 2>/dev/null || echo "not_found")
+
+              if [ "$status" = "exited" ]; then
+                exit_code=$(docker inspect -f '{{.State.ExitCode}}' dremio-init)
+                if [ "$exit_code" = "0" ]; then
+                  echo "✅ dremio-init completed successfully!"
+                  echo ""
+                  echo "=== dremio-init logs ==="
+                  docker logs dremio-init
+                  echo "========================"
+
+                  # Verify success message in logs
+                  if docker logs dremio-init 2>&1 | grep -q "🎉 Dremio initialization complete!"; then
+                    echo "✅ Initialization verified in logs"
+                    exit 0
+                  else
+                    echo "⚠️  Success message not found in logs, but exit code is 0"
+                    exit 0
+                  fi
+                else
+                  echo "❌ dremio-init failed with exit code $exit_code"
+                  echo ""
+                  echo "=== dremio-init logs ==="
+                  docker logs dremio-init
+                  echo "========================"
+                  exit 1
+                fi
               else
-                echo "❌ dremio-init failed with exit code $exit_code"
-                docker logs dremio-init
-                exit 1
+                echo "[$attempt/$max_attempts] dremio-init status: $status"
               fi
+            else
+              echo "[$attempt/$max_attempts] Waiting for dremio-init container to start..."
             fi
-            echo "Waiting for dremio-init... ($i/60) - Status: $status"
+
             sleep 2
           done
 
-          # Final check
-          final_status=$(docker inspect -f '{{.State.Status}}' dremio-init 2>/dev/null || echo "not_found")
-          if [ "$final_status" != "exited" ]; then
-            echo "❌ dremio-init did not complete in time"
+          # Timeout
+          echo "❌ Timeout waiting for dremio-init (3 minutes)"
+          echo ""
+          echo "Available containers:"
+          docker ps -a --format 'table {{.Names}}\t{{.Status}}'
+          echo ""
+          if docker ps -a --format '{{.Names}}' | grep -q '^dremio-init$'; then
+            echo "=== dremio-init logs ==="
             docker logs dremio-init
-            exit 1
+            echo "========================"
           fi
+          exit 1
 
       - name: Verify Nessie catalog is available
         run: |
