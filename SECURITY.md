@@ -12,7 +12,11 @@ The following default credentials are used and should be changed for any non-loc
 
 **MinIO:**
 - Username: `admin`
-- Password: `password`
+- Password: `password1`
+
+**Dremio:**
+- Username: `admin`
+- Password: `password1`
 
 **Recommendation:** Use strong, unique passwords and store them securely (e.g., using environment variables or secrets management).
 

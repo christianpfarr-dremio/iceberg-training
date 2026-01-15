@@ -75,6 +75,7 @@ services:
     labels:
       - "com.iceberg-training.service=catalog"
       - "com.iceberg-training.description=Nessie Catalog Server"
+
   # MinIO Storage Server
   minio:
     image: minio/minio:latest
@@ -103,6 +104,7 @@ services:
     labels:
       - "com.iceberg-training.service=storage"
       - "com.iceberg-training.description=MinIO S3-compatible Object Storage"
+
   # Dremio Query Engine
   dremio:
     platform: linux/x86_64
