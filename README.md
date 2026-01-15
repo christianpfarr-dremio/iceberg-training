@@ -90,8 +90,8 @@ Services are ready when:
 
 1. Open **http://localhost:9047** in your browser
 2. **Login with auto-created admin user:**
-   - **Username**: `admin`
-   - **Password**: `admin123` (or value from `DREMIO_ADMIN_PASSWORD` env var)
+   - **Username**: `admin` (configurable via `DREMIO_ADMIN_USERNAME`)
+   - **Password**: `admin123` (configurable via `DREMIO_ADMIN_PASSWORD`)
 3. Click on **"Add Source"** → **"Nessie"**
 
 #### Nessie Source Configuration:
@@ -249,13 +249,13 @@ docker-compose up -d
 
 ## 🌐 Service URLs & Credentials
 
-| Service | URL | Username | Password | Description |
-|---------|-----|----------|----------|-------------|
-| Dremio UI | http://localhost:9047 | `admin` | `admin123` | Query Engine & Data Catalog UI |
-| MinIO Console | http://localhost:9001 | `minioadmin` | `minioadmin` | Object Storage UI |
-| MinIO API | http://localhost:9000 | `minioadmin` | `minioadmin` | S3-compatible API |
-| Nessie API | http://localhost:19120/api/v2 | - | - | Catalog REST API |
-| Nessie UI | http://localhost:19120 | - | - | Nessie Web UI |
+| Service | URL | Username | Password | Env Variables |
+|---------|-----|----------|----------|---------------|
+| Dremio UI | http://localhost:9047 | `admin` | `admin123` | `DREMIO_ADMIN_USERNAME`, `DREMIO_ADMIN_PASSWORD` |
+| MinIO Console | http://localhost:9001 | `admin` | `password` | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` |
+| MinIO API | http://localhost:9000 | `admin` | `password` | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` |
+| Nessie API | http://localhost:19120/api/v2 | - | - | - |
+| Nessie UI | http://localhost:19120 | - | - | - |
 
 > **Note**: Default credentials are automatically configured. Change them via environment variables in `.env` file for production use.
 
