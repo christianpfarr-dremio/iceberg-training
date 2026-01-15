@@ -46,7 +46,25 @@ jobs:
       - name: Check Dremio health
         run: |
           curl -f http://localhost:9047 || exit 1
-      
+
+      - name: Wait for Dremio initialization
+        run: |
+          echo "Waiting for Dremio to complete initialization..."
+          sleep 30
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test dependencies
+        run: |
+          pip install -r tests/requirements.txt
+
+      - name: Run table operations tests
+        run: |
+          python tests/test_table_operations.py
+
       - name: Show service status
         run: docker-compose ps
       
