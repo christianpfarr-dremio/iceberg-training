@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test Docker Compose Setup
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Validate docker-compose.yml
+        run: docker-compose config --quiet
+      
+      - name: Start services
+        run: docker-compose up -d
+      
+      - name: Wait for services to be ready
+        run: |
+          echo "Waiting for services to start..."
+          sleep 30
+      
+      - name: Check Nessie health
+        run: |
+          curl -f http://localhost:19120/api/v2/config || exit 1
+      
+      - name: Check MinIO health
+        run: |
+          curl -f http://localhost:9000/minio/health/live || exit 1
+      
+      - name: Check Dremio health
+        run: |
+          curl -f http://localhost:9047 || exit 1
+      
+      - name: Show service status
+        run: docker-compose ps
+      
+      - name: Show service logs
+        if: always()
+        run: docker-compose logs
+      
+      - name: Test restart (persistence)
+        run: |
+          docker-compose restart
+          sleep 20
+          curl -f http://localhost:19120/api/v2/config || exit 1
+      
+      - name: Cleanup
+        if: always()
+        run: docker-compose down -v
+
+  lint:
+    name: Lint and Validate
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Validate docker-compose.yml
+        run: docker-compose config --quiet
+      
+      - name: Check shell scripts
+        run: |
+          if [ -f health-check.sh ]; then
+            bash -n health-check.sh
+          fi
+      
+      - name: Check for secrets in code
+        run: |
+          if grep -r "password.*=" . --exclude-dir=.git --exclude="*.md" --exclude=".env.example" | grep -v "MINIO_ROOT_PASSWORD"; then
+            echo "Warning: Potential hardcoded secrets found"
+            exit 1
+          fi
+

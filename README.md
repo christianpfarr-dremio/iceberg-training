@@ -23,26 +23,51 @@ This setup provides a complete local environment for Apache Iceberg training wit
 
 ## 🚀 Quick Start
 
-### 1. Start Services
+### Option 1: Using Makefile (Recommended)
+
+```bash
+# Start all services
+make up
+
+# Check health
+make health
+
+# View logs
+make logs
+
+# Stop services
+make down
+
+# See all available commands
+make help
+```
+
+### Option 2: Using Docker Compose
 
 ```bash
 # Start all services in background
 docker-compose up -d
 
-# Or start individually (for debugging)
-docker-compose up dremio
-docker-compose up minio
-docker-compose up nessie
-```
-
-### 2. Wait for Services to be Ready
-
-```bash
 # Check status
 docker-compose ps
 
 # View logs
 docker-compose logs -f
+
+# Stop services
+docker-compose down
+```
+
+### 3. Verify Services are Ready
+
+```bash
+# Run automated health check
+./health-check.sh
+
+# Or check manually
+curl http://localhost:19120/api/v2/config  # Nessie
+curl http://localhost:9000/minio/health/live  # MinIO
+curl http://localhost:9047  # Dremio
 ```
 
 Services are ready when:
@@ -154,6 +179,37 @@ docker-compose up -d
 
 ## 🔧 Useful Commands
 
+### Using Makefile
+
+```bash
+# Start/Stop
+make up              # Start all services
+make down            # Stop all services
+make restart         # Restart all services
+
+# Monitoring
+make status          # Show service status
+make logs            # Show all logs
+make logs-nessie     # Show Nessie logs only
+make logs-minio      # Show MinIO logs only
+make logs-dremio     # Show Dremio logs only
+make health          # Run health check
+
+# Cleanup
+make clean           # Stop and remove containers
+make reset           # Complete reset (removes volumes!)
+
+# Testing
+make test            # Run full test suite
+
+# Utilities
+make urls            # Show all service URLs
+make open-dremio     # Open Dremio UI in browser (macOS)
+make open-minio      # Open MinIO UI in browser (macOS)
+```
+
+### Using Docker Compose
+
 ```bash
 # Start services
 docker-compose up -d
@@ -174,6 +230,19 @@ docker-compose ps
 docker exec -it nessie /bin/bash
 docker exec -it minio /bin/bash
 docker exec -it dremio /bin/bash
+```
+
+### Environment Variables
+
+You can customize ports and settings using environment variables:
+
+```bash
+# Copy example environment file
+cp .env.example .env
+
+# Edit .env file with your settings
+# Then start services
+docker-compose up -d
 ```
 
 ## 🌐 Service URLs

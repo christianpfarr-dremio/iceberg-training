@@ -1,8 +1,7 @@
 ###########################################
-# Notebook- Iceberg - Nessie Setup
+# Apache Iceberg Training Setup
+# Dremio + Nessie + MinIO
 ###########################################
-
-version: "3"
 
 services:
   # Init container to fix Nessie volume permissions
@@ -12,6 +11,10 @@ services:
     command: sh -c "adduser -D -u 185 default && chown -R default:root /data && chmod -R 775 /data"
     volumes:
       - nessie-data:/data
+    restart: "no"
+    labels:
+      - "com.iceberg-training.service=init"
+      - "com.iceberg-training.description=Initialize Nessie volume permissions"
 
   # Nessie Catalog Server Using RocksDB (Persistent Storage)
   nessie:
@@ -29,44 +32,90 @@ services:
     networks:
       iceberg:
     ports:
-      - 19120:19120
-  # Minio Storage Server
+      - "${NESSIE_PORT:-19120}:19120"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:19120/api/v2/config"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.iceberg-training.service=catalog"
+      - "com.iceberg-training.description=Nessie Catalog Server"
+  # MinIO Storage Server
   minio:
     image: minio/minio:latest
     container_name: minio
     environment:
-      - MINIO_ROOT_USER=admin
-      - MINIO_ROOT_PASSWORD=password
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-admin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-password}
       - MINIO_DOMAIN=storage
-      - MINIO_REGION_NAME=us-east-1
-      - MINIO_REGION=us-east-1
+      - MINIO_REGION_NAME=${MINIO_REGION:-us-east-1}
+      - MINIO_REGION=${MINIO_REGION:-us-east-1}
     networks:
       iceberg:
     ports:
-      - 9001:9001
-      - 9000:9000
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${MINIO_API_PORT:-9000}:9000"
     volumes:
       - minio-data:/data
     command: ["server", "/data", "--console-address", ":9001"]
-  # Dremio
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "com.iceberg-training.service=storage"
+      - "com.iceberg-training.description=MinIO S3-compatible Object Storage"
+  # Dremio Query Engine
   dremio:
     platform: linux/x86_64
     image: dremio/dremio-oss:latest
-    ports:
-      - 9047:9047
-      - 31010:31010
-      - 32010:32010
     container_name: dremio
+    ports:
+      - "${DREMIO_UI_PORT:-9047}:9047"
+      - "${DREMIO_CLIENT_PORT:-31010}:31010"
+      - "${DREMIO_FLIGHT_PORT:-32010}:32010"
     environment:
       - DREMIO_JAVA_SERVER_EXTRA_OPTS=-Dpaths.dist=file:///opt/dremio/data/dist
     volumes:
       - dremio-data:/opt/dremio/data
     networks:
       iceberg:
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9047"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+      - "com.iceberg-training.service=query-engine"
+      - "com.iceberg-training.description=Dremio SQL Query Engine"
 networks:
   iceberg:
+    name: ${NETWORK_NAME:-iceberg-training}_iceberg
+    driver: bridge
+    labels:
+      - "com.iceberg-training.network=main"
 
 volumes:
   nessie-data:
+    name: ${NETWORK_NAME:-iceberg-training}_nessie-data
+    labels:
+      - "com.iceberg-training.volume=nessie"
+      - "com.iceberg-training.description=Nessie RocksDB catalog data"
   minio-data:
+    name: ${NETWORK_NAME:-iceberg-training}_minio-data
+    labels:
+      - "com.iceberg-training.volume=minio"
+      - "com.iceberg-training.description=MinIO S3 object storage"
   dremio-data:
+    name: ${NETWORK_NAME:-iceberg-training}_dremio-data
+    labels:
+      - "com.iceberg-training.volume=dremio"
+      - "com.iceberg-training.description=Dremio metadata and configuration"
