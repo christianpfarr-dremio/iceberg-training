@@ -36,9 +36,6 @@ services:
           echo "✅ Bucket warehouse created successfully!";
         fi;
 
-        echo "Setting bucket versioning...";
-        mc version enable myminio/warehouse;
-
         echo "🎉 MinIO initialization complete!";
       '
     networks:

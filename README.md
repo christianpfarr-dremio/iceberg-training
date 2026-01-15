@@ -87,6 +87,7 @@ Services are ready when:
    - **Password**: `password1` (configurable via `MINIO_ROOT_PASSWORD`)
 3. **✅ Bucket is automatically created!**
    - The init container automatically creates a bucket named **`warehouse`**
+   - Bucket versioning is **disabled** (Iceberg handles its own versioning via metadata)
    - No manual configuration needed!
 
 ### Dremio Setup (Query Engine)
