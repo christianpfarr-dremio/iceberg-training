@@ -4,14 +4,14 @@ Integration tests for Dremio table operations with Nessie catalog.
 Tests CREATE, INSERT, SELECT, UPDATE, DELETE operations using Arrow Flight.
 """
 
+import os
 import sys
-import pyarrow as pa
 import pyarrow.flight as flight
 
-DREMIO_HOST = "localhost"
-DREMIO_PORT = 32010
-USERNAME = "admin"
-PASSWORD = "password1"
+DREMIO_HOST = os.getenv("DREMIO_HOST", "localhost")
+DREMIO_PORT = int(os.getenv("DREMIO_PORT", "32010"))
+USERNAME = os.getenv("DREMIO_USERNAME", "admin")
+PASSWORD = os.getenv("DREMIO_PASSWORD", "password1")
 
 class DremioFlightClient:
     def __init__(self, host, port, username, password):

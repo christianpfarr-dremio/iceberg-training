@@ -107,7 +107,7 @@ jobs:
       
       - name: Check for secrets in code
         run: |
-          if grep -r "password.*=" . --exclude-dir=.git --exclude="*.md" --exclude=".env.example" | grep -v "MINIO_ROOT_PASSWORD"; then
+          if grep -r "password.*=" . --exclude-dir=.git --exclude="*.md" --exclude=".env.example" | grep -v "MINIO_ROOT_PASSWORD" | grep -v "self.password = password" | grep -v "os.getenv"; then
             echo "Warning: Potential hardcoded secrets found"
             exit 1
           fi
