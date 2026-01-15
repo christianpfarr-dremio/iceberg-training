@@ -96,6 +96,51 @@ services:
     labels:
       - "com.iceberg-training.service=query-engine"
       - "com.iceberg-training.description=Dremio SQL Query Engine"
+
+  # Dremio Init Container - Create Admin User
+  dremio-init:
+    image: curlimages/curl:latest
+    container_name: dremio-init
+    depends_on:
+      dremio:
+        condition: service_healthy
+    command: >
+      sh -c '
+        echo "Waiting for Dremio to be ready...";
+        for i in $$(seq 1 30); do
+          if curl -f http://dremio:9047 >/dev/null 2>&1; then
+            echo "Dremio is ready!";
+            break;
+          fi;
+          echo "Waiting... ($$i/30)";
+          sleep 2;
+        done;
+
+        echo "Creating admin user...";
+        response=$$(curl -s -w "\n%{http_code}" -X PUT "http://dremio:9047/apiv2/bootstrap/firstuser" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: null" \
+          --data-raw "{\"userName\":\"admin\",\"firstName\":\"Admin\",\"lastName\":\"User\",\"email\":\"admin@example.com\",\"createdAt\":$$(date +%s)000,\"password\":\"${DREMIO_ADMIN_PASSWORD:-admin123}\"}");
+
+        http_code=$$(echo "$$response" | tail -n1);
+        body=$$(echo "$$response" | head -n-1);
+
+        if [ "$$http_code" = "200" ]; then
+          echo "✅ Admin user created successfully!";
+          echo "   Username: admin";
+          echo "   Password: ${DREMIO_ADMIN_PASSWORD:-admin123}";
+        elif echo "$$body" | grep -q "User already exists"; then
+          echo "ℹ️  Admin user already exists";
+        else
+          echo "⚠️  Unexpected response (HTTP $$http_code): $$body";
+        fi;
+      '
+    restart: "no"
+    networks:
+      - iceberg
+    labels:
+      - "com.iceberg-training.service=init"
+      - "com.iceberg-training.description=Initialize Dremio admin user"
 networks:
   iceberg:
     name: ${NETWORK_NAME:-iceberg-training}_iceberg

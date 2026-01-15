@@ -89,7 +89,9 @@ Services are ready when:
 ### Dremio Setup (Query Engine)
 
 1. Open **http://localhost:9047** in your browser
-2. Create your Dremio account (first-time setup)
+2. **Login with auto-created admin user:**
+   - **Username**: `admin`
+   - **Password**: `admin123` (or value from `DREMIO_ADMIN_PASSWORD` env var)
 3. Click on **"Add Source"** → **"Nessie"**
 
 #### Nessie Source Configuration:
@@ -245,15 +247,17 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-## 🌐 Service URLs
+## 🌐 Service URLs & Credentials
 
-| Service | URL | Description |
-|---------|-----|-------------|
-| Dremio UI | http://localhost:9047 | Query Engine & Data Catalog UI |
-| MinIO Console | http://localhost:9000 | Object Storage UI |
-| MinIO API | http://localhost:9000 | S3-compatible API |
-| Nessie API | http://localhost:19120/api/v2 | Catalog REST API |
-| Nessie UI | http://localhost:19120 | Nessie Web UI |
+| Service | URL | Username | Password | Description |
+|---------|-----|----------|----------|-------------|
+| Dremio UI | http://localhost:9047 | `admin` | `admin123` | Query Engine & Data Catalog UI |
+| MinIO Console | http://localhost:9001 | `minioadmin` | `minioadmin` | Object Storage UI |
+| MinIO API | http://localhost:9000 | `minioadmin` | `minioadmin` | S3-compatible API |
+| Nessie API | http://localhost:19120/api/v2 | - | - | Catalog REST API |
+| Nessie UI | http://localhost:19120 | - | - | Nessie Web UI |
+
+> **Note**: Default credentials are automatically configured. Change them via environment variables in `.env` file for production use.
 
 ## 🐛 Troubleshooting
 
