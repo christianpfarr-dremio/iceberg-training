@@ -14,6 +14,8 @@ This setup provides a complete local environment for Apache Iceberg training wit
 ✅ **Disabled Authentication** - No OIDC warnings
 ✅ **Docker Volumes** - Automatic data persistence for all services
 ✅ **Tested Persistence** - Verified that tables and configurations survive container restarts
+✅ **Automated Setup** - Dremio admin user and Nessie catalog created automatically via REST API
+✅ **Zero Manual Configuration** - Ready to query immediately after startup
 
 ## 📋 Prerequisites
 
@@ -81,39 +83,43 @@ Services are ready when:
 
 1. Open **http://localhost:9000** in your browser
 2. Login with:
-   - **Username**: `admin`
-   - **Password**: `password`
-3. Click on **"Buckets"** in the left menu
-4. Create a new bucket named **`warehouse`**
+   - **Username**: `admin` (configurable via `MINIO_ROOT_USER`)
+   - **Password**: `password1` (configurable via `MINIO_ROOT_PASSWORD`)
+3. **✅ Bucket is automatically created!**
+   - The init container automatically creates a bucket named **`warehouse`**
+   - No manual configuration needed!
 
 ### Dremio Setup (Query Engine)
 
 1. Open **http://localhost:9047** in your browser
 2. **Login with auto-created admin user:**
    - **Username**: `admin` (configurable via `DREMIO_ADMIN_USERNAME`)
-   - **Password**: `admin123` (configurable via `DREMIO_ADMIN_PASSWORD`)
-3. Click on **"Add Source"** → **"Nessie"**
+   - **Password**: `password1` (configurable via `DREMIO_ADMIN_PASSWORD`)
+3. **✅ Nessie catalog is automatically created!**
+   - The init container automatically creates a Nessie source named `nessie`
+   - You can start querying immediately - no manual configuration needed!
 
-#### Nessie Source Configuration:
+#### Auto-configured Nessie Source Details:
 
-**General Tab:**
+The following Nessie source is automatically created via Dremio REST API:
+
+**General:**
 - **Name**: `nessie`
 - **Endpoint URL**: `http://nessie:19120/api/v2`
 - **Authentication**: `none`
 
-**Storage Tab:**
-- **Access Key**: `admin`
-- **Secret Key**: `password`
+**Storage (MinIO S3):**
+- **Access Key**: `admin` (from `MINIO_ROOT_USER`)
+- **Secret Key**: `password1` (from `MINIO_ROOT_PASSWORD`)
 - **Root Path**: `/warehouse`
-- **Connection Properties** (important!):
+- **Connection Properties**:
   ```
   fs.s3a.path.style.access = true
   fs.s3a.endpoint = minio:9000
   dremio.s3.compat = true
   ```
-- ⚠️ **UNCHECK "Encrypt connection"**
 
-4. Click **"Save"**
+> **Note**: If you need to manually recreate the source, use the configuration above.
 
 ## 📊 Architecture
 
@@ -251,13 +257,13 @@ docker-compose up -d
 
 | Service | URL | Username | Password | Env Variables |
 |---------|-----|----------|----------|---------------|
-| Dremio UI | http://localhost:9047 | `admin` | `admin123` | `DREMIO_ADMIN_USERNAME`, `DREMIO_ADMIN_PASSWORD` |
-| MinIO Console | http://localhost:9001 | `admin` | `password` | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` |
-| MinIO API | http://localhost:9000 | `admin` | `password` | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` |
+| Dremio UI | http://localhost:9047 | `admin` | `password1` | `DREMIO_ADMIN_USERNAME`, `DREMIO_ADMIN_PASSWORD` |
+| MinIO Console | http://localhost:9001 | `admin` | `password1` | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` |
+| MinIO API | http://localhost:9000 | `admin` | `password1` | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` |
 | Nessie API | http://localhost:19120/api/v2 | - | - | - |
 | Nessie UI | http://localhost:19120 | - | - | - |
 
-> **Note**: Default credentials are automatically configured. Change them via environment variables in `.env` file for production use.
+> **Note**: Default credentials (`admin`/`password1`) are automatically configured for all services. The password must contain both letters and numbers to meet Dremio's requirements. Change credentials via environment variables in `.env` file for production use.
 
 ## 🐛 Troubleshooting
 
@@ -313,7 +319,7 @@ docker-compose up -d
 docker-compose logs -f
 ```
 
-Then repeat the configuration steps (MinIO bucket + Dremio source).
+The MinIO bucket and Dremio Nessie source will be automatically recreated.
 
 ## 📝 License
 

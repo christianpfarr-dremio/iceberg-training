@@ -8,13 +8,45 @@ services:
   nessie-init:
     image: alpine:latest
     container_name: nessie-init
-    command: sh -c "adduser -D -u 185 default && chown -R default:root /data && chmod -R 775 /data"
+    command: sh -c "adduser -D -u 185 default || true && chown -R default:root /data && chmod -R 775 /data"
     volumes:
       - nessie-data:/data
     restart: "no"
     labels:
       - "com.iceberg-training.service=init"
       - "com.iceberg-training.description=Initialize Nessie volume permissions"
+
+  # Init container to create MinIO buckets
+  minio-init:
+    image: minio/mc:latest
+    container_name: minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c '
+        echo "Configuring MinIO client...";
+        mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-admin} ${MINIO_ROOT_PASSWORD:-password1};
+
+        echo "Creating warehouse bucket...";
+        if mc ls myminio/warehouse >/dev/null 2>&1; then
+          echo "ℹ️  Bucket warehouse already exists";
+        else
+          mc mb myminio/warehouse;
+          echo "✅ Bucket warehouse created successfully!";
+        fi;
+
+        echo "Setting bucket versioning...";
+        mc version enable myminio/warehouse;
+
+        echo "🎉 MinIO initialization complete!";
+      '
+    networks:
+      iceberg:
+    restart: "no"
+    labels:
+      - "com.iceberg-training.service=init"
+      - "com.iceberg-training.description=Initialize MinIO buckets"
 
   # Nessie Catalog Server Using RocksDB (Persistent Storage)
   nessie:
@@ -49,7 +81,7 @@ services:
     container_name: minio
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-admin}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-password}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-password1}
       - MINIO_DOMAIN=storage
       - MINIO_REGION_NAME=${MINIO_REGION:-us-east-1}
       - MINIO_REGION=${MINIO_REGION:-us-east-1}
@@ -97,15 +129,24 @@ services:
       - "com.iceberg-training.service=query-engine"
       - "com.iceberg-training.description=Dremio SQL Query Engine"
 
-  # Dremio Init Container - Create Admin User
+  # Dremio Init Container - Create Admin User and Nessie Catalog
   dremio-init:
-    image: curlimages/curl:latest
+    image: alpine:latest
     container_name: dremio-init
     depends_on:
       dremio:
         condition: service_healthy
+      nessie:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     command: >
       sh -c '
+        echo "Installing dependencies...";
+        apk add --no-cache curl jq >/dev/null 2>&1;
+
         echo "Waiting for Dremio to be ready...";
         for i in $$(seq 1 30); do
           if curl -f http://dremio:9047 >/dev/null 2>&1; then
@@ -120,7 +161,7 @@ services:
         response=$$(curl -s -w "\n%{http_code}" -X PUT "http://dremio:9047/apiv2/bootstrap/firstuser" \
           -H "Content-Type: application/json" \
           -H "Authorization: null" \
-          --data-raw "{\"userName\":\"${DREMIO_ADMIN_USERNAME:-admin}\",\"firstName\":\"Admin\",\"lastName\":\"User\",\"email\":\"admin@example.com\",\"createdAt\":$$(date +%s)000,\"password\":\"${DREMIO_ADMIN_PASSWORD:-admin123}\"}");
+          --data-raw "{\"userName\":\"${DREMIO_ADMIN_USERNAME:-admin}\",\"firstName\":\"Admin\",\"lastName\":\"User\",\"email\":\"admin@example.com\",\"createdAt\":$$(date +%s)000,\"password\":\"${DREMIO_ADMIN_PASSWORD:-password1}\"}");
 
         http_code=$$(echo "$$response" | tail -n1);
         body=$$(echo "$$response" | head -n-1);
@@ -128,19 +169,92 @@ services:
         if [ "$$http_code" = "200" ]; then
           echo "✅ Admin user created successfully!";
           echo "   Username: ${DREMIO_ADMIN_USERNAME:-admin}";
-          echo "   Password: ${DREMIO_ADMIN_PASSWORD:-admin123}";
-        elif echo "$$body" | grep -q "User already exists"; then
-          echo "ℹ️  Admin user already exists";
+          echo "   Password: ${DREMIO_ADMIN_PASSWORD:-password1}";
+          TOKEN=$$(echo "$$body" | jq -r ".token");
+        elif [ "$$http_code" = "400" ]; then
+          echo "ℹ️  Admin user already exists (HTTP 400)";
+          echo "Logging in to get token...";
+          login_response=$$(curl -s -w "\n%{http_code}" -X POST "http://dremio:9047/apiv2/login" \
+            -H "Content-Type: application/json" \
+            --data-raw "{\"userName\":\"${DREMIO_ADMIN_USERNAME:-admin}\",\"password\":\"${DREMIO_ADMIN_PASSWORD:-password1}\"}");
+          login_code=$$(echo "$$login_response" | tail -n1);
+          login_body=$$(echo "$$login_response" | head -n-1);
+          if [ "$$login_code" = "200" ]; then
+            TOKEN=$$(echo "$$login_body" | jq -r ".token");
+            echo "✅ Login successful";
+          else
+            echo "❌ Login failed (HTTP $$login_code): $$login_body";
+            exit 1;
+          fi;
         else
           echo "⚠️  Unexpected response (HTTP $$http_code): $$body";
+          exit 1;
         fi;
+
+        echo "Token extracted: $${TOKEN:0:20}...";
+        if [ -z "$$TOKEN" ] || [ "$$TOKEN" = "null" ]; then
+          echo "❌ Failed to extract token";
+          exit 1;
+        fi;
+
+        echo "";
+        echo "Creating Nessie catalog source...";
+        catalog_response=$$(curl -s -w "\n%{http_code}" -X POST "http://dremio:9047/api/v3/catalog" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: _dremio$$TOKEN" \
+          --data-raw "{
+            \"entityType\": \"source\",
+            \"type\": \"NESSIE\",
+            \"name\": \"nessie\",
+            \"config\": {
+              \"nessieEndpoint\": \"http://nessie:19120/api/v2\",
+              \"nessieAuthType\": \"NONE\",
+              \"credentialType\": \"ACCESS_KEY\",
+              \"awsAccessKey\": \"${MINIO_ROOT_USER:-admin}\",
+              \"awsAccessSecret\": \"${MINIO_ROOT_PASSWORD:-password1}\",
+              \"awsRootPath\": \"/warehouse\",
+              \"secure\": false,
+              \"propertyList\": [
+                {\"name\": \"fs.s3a.path.style.access\", \"value\": \"true\"},
+                {\"name\": \"fs.s3a.endpoint\", \"value\": \"minio:9000\"},
+                {\"name\": \"dremio.s3.compat\", \"value\": \"true\"}
+              ]
+            },
+            \"metadataPolicy\": {
+              \"authTTLMs\": 86400000,
+              \"namesRefreshMs\": 3600000,
+              \"datasetRefreshAfterMs\": 3600000,
+              \"datasetExpireAfterMs\": 10800000,
+              \"datasetUpdateMode\": \"PREFETCH_QUERIED\",
+              \"deleteUnavailableDatasets\": true,
+              \"autoPromoteDatasets\": false
+            }
+          }");
+
+        catalog_code=$$(echo "$$catalog_response" | tail -n1);
+        catalog_body=$$(echo "$$catalog_response" | head -n-1);
+
+        if [ "$$catalog_code" = "200" ]; then
+          echo "✅ Nessie catalog created successfully!";
+          echo "   Name: nessie";
+          echo "   Endpoint: http://nessie:19120/api/v2";
+          echo "   Storage: MinIO (s3://warehouse)";
+        elif echo "$$catalog_body" | grep -q "already exists"; then
+          echo "ℹ️  Nessie catalog already exists";
+        else
+          echo "⚠️  Failed to create Nessie catalog (HTTP $$catalog_code)";
+          echo "Response: $$catalog_body";
+        fi;
+
+        echo "";
+        echo "🎉 Dremio initialization complete!";
       '
     restart: "no"
     networks:
       - iceberg
     labels:
       - "com.iceberg-training.service=init"
-      - "com.iceberg-training.description=Initialize Dremio admin user"
+      - "com.iceberg-training.description=Initialize Dremio admin user and Nessie catalog"
 networks:
   iceberg:
     name: ${NETWORK_NAME:-iceberg-training}_iceberg
