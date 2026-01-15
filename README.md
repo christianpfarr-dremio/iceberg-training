@@ -297,12 +297,99 @@ docker-compose down
 docker-compose up -d --force-recreate
 ```
 
+## 🧪 Running CI Locally with Act
+
+You can run the GitHub Actions CI pipeline locally using [act](https://github.com/nektos/act). This is useful for testing changes before pushing.
+
+### Prerequisites
+
+Install `act`:
+
+```bash
+# macOS
+brew install act
+
+# Linux
+curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
+
+# Windows (with Chocolatey)
+choco install act-cli
+```
+
+### Running CI Locally
+
+```bash
+# Run the full CI pipeline (uses medium Docker image)
+act -P ubuntu-latest=catthehacker/ubuntu:act-latest
+
+# Run only the test job
+act -j test -P ubuntu-latest=catthehacker/ubuntu:act-latest
+
+# Run only the lint job
+act -j lint -P ubuntu-latest=catthehacker/ubuntu:act-latest
+
+# Dry run (show what would be executed)
+act -n
+```
+
+### Common Options
+
+| Option | Description |
+|--------|-------------|
+| `-j <job>` | Run a specific job (e.g., `test`, `lint`) |
+| `-n` | Dry run - show what would happen |
+| `-v` | Verbose output |
+| `--rm` | Remove containers after run |
+| `-P ubuntu-latest=<image>` | Use a specific Docker image |
+
+### Recommended Docker Images for Act
+
+| Image | Size | Description |
+|-------|------|-------------|
+| `catthehacker/ubuntu:act-latest` | ~1GB | Good balance of size and compatibility |
+| `catthehacker/ubuntu:full-latest` | ~12GB | Full Ubuntu with all tools |
+| `nektos/act-environments-ubuntu:18.04` | ~18GB | Most compatible, but very large |
+
+### Example: Quick Test
+
+```bash
+# Fast lint check
+act -j lint -P ubuntu-latest=catthehacker/ubuntu:act-latest
+
+# Full test (takes ~3-5 minutes)
+act -j test -P ubuntu-latest=catthehacker/ubuntu:act-latest --rm
+```
+
+### Troubleshooting Act
+
+**Docker socket issues:**
+```bash
+# Make sure Docker is running and accessible
+docker info
+
+# On Linux, you may need to add your user to the docker group
+sudo usermod -aG docker $USER
+```
+
+**Memory issues:**
+```bash
+# Act runs Docker-in-Docker, which needs memory
+# Increase Docker memory limit to at least 4GB
+```
+
+**Container conflicts:**
+```bash
+# Clean up any leftover containers
+docker rm -f $(docker ps -a -q --filter "name=act-*") 2>/dev/null || true
+```
+
 ## 📚 Additional Resources
 
 - [Apache Iceberg Documentation](https://iceberg.apache.org/)
 - [Project Nessie Documentation](https://projectnessie.org/)
 - [Dremio Documentation](https://docs.dremio.com/)
 - [MinIO Documentation](https://min.io/docs/)
+- [Act Documentation](https://github.com/nektos/act)
 
 ## 🔄 Starting Fresh
 
