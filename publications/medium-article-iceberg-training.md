@@ -73,10 +73,17 @@ Nessie tracks all this metadata with full transactional guarantees. When you mer
 
 Dremio brings everything together. It's a high-performance SQL query engine that connects to Nessie (for catalog metadata) and MinIO (for data storage), providing a unified interface to your lakehouse.
 
-![Dremio SQL Editor](dremio.png)
-*The Dremio SQL editor with the Nessie catalog ready to use — no configuration needed*
+**Why Dremio fits this stack so well:**
 
-But Dremio is more than just a query engine. It exposes all of Nessie's Git-like capabilities directly in its SQL interface:
+Unlike traditional query engines that simply read data and return results, Dremio was built from the ground up for the lakehouse architecture. It has native, first-class support for Apache Iceberg — not as an afterthought or plugin, but as a core capability. This means:
+
+- **Deep Iceberg integration**: Dremio understands Iceberg's metadata, partition pruning, and file statistics. It uses this information to skip irrelevant files and minimize I/O — often reading only a fraction of the data.
+- **Reflections**: Dremio can automatically create and maintain optimized materializations of your data. Query a 100 GB table, and Dremio might serve results from a 500 MB pre-aggregated reflection — transparently, without changing your SQL.
+- **Arrow-native execution**: Dremio uses Apache Arrow as its in-memory format throughout the query engine. This eliminates serialization overhead and enables zero-copy data sharing with tools like pandas, Spark, and any Arrow Flight client.
+
+**What sets Dremio apart from other query engines:**
+
+Many query engines can read Iceberg tables. But Dremio goes further by exposing Nessie's Git-like capabilities directly in its SQL interface:
 
 ```sql
 -- Create a branch
@@ -92,13 +99,15 @@ SELECT * FROM nessie.sales AT TAG v1_release;
 MERGE BRANCH dev INTO main IN nessie;
 ```
 
-You don't need to learn a separate tool or API — branching, tagging, and time travel are all available through familiar SQL commands.
+You don't need to learn a separate tool or API — branching, tagging, and time travel are all available through familiar SQL commands. This tight integration between the query engine and the catalog is rare. Most other engines treat the catalog as a black box; Dremio treats it as a first-class citizen.
 
-Dremio also provides:
-- A web-based SQL editor with syntax highlighting and auto-completion
-- Visual exploration of your catalog, tables, and branches
-- Query history and performance insights
-- Role-based access control for multi-user environments
+**Additional capabilities:**
+
+- **Web-based SQL editor** with syntax highlighting, auto-completion, and query history
+- **Visual catalog explorer** — browse tables, schemas, and branches without writing SQL
+- **Arrow Flight endpoint** — programmatic access for high-performance data transfer to Python, Java, or any Arrow-compatible tool
+- **Role-based access control** — define who can see and modify which data, down to the row and column level
+- **Federation** — query not just Iceberg tables, but also PostgreSQL, MySQL, S3 files, and more — all in a single SQL statement
 
 ### How They Fit Together
 
@@ -185,7 +194,7 @@ SELECT * FROM nessie.sales;
 
 No manual setup. No "first you need to configure X". It just works.
 
-![Dremio SQL Editor](images/dremio-ui-screenshot.png)
+![Dremio SQL Editor](dremio.png)
 *The Dremio SQL editor with the Nessie catalog ready to use — no configuration needed*
 
 ---
@@ -701,7 +710,3 @@ If this setup saved you time, leave a star on GitHub. And if you run into proble
 - Better Programming
 
 **Estimated Reading Time:** ~25 minutes
-
----
-
-**Image to include:** Save the Dremio UI screenshot and insert it after the first SQL code block. Upload directly when publishing to Medium.
