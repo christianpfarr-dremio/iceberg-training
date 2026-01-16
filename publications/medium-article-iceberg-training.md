@@ -173,10 +173,12 @@ That's what this repository provides: all the integration done upfront, so you c
 Clone the repository and start the environment:
 
 ```bash
-git clone https://github.com/christianpfarr-dremio/iceberg-training.git
+git clone --branch nessie https://github.com/christianpfarr-dremio/iceberg-training.git
 cd iceberg-training
 docker-compose up -d
 ```
+
+> **Note:** This article uses the `nessie` tag, which provides the Nessie-based catalog setup. The repository may have newer versions with different catalog configurations.
 
 After 30 seconds, open `http://localhost:9047`, log in with `admin` / `password1` — and you're ready to go:
 
