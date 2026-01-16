@@ -73,6 +73,9 @@ Nessie tracks all this metadata with full transactional guarantees. When you mer
 
 Dremio brings everything together. It's a high-performance SQL query engine that connects to Nessie (for catalog metadata) and MinIO (for data storage), providing a unified interface to your lakehouse.
 
+![Dremio SQL Editor](dremio.png)
+*The Dremio SQL editor with the Nessie catalog ready to use — no configuration needed*
+
 But Dremio is more than just a query engine. It exposes all of Nessie's Git-like capabilities directly in its SQL interface:
 
 ```sql
@@ -276,9 +279,9 @@ This is a **training setup**, not a production template. The default credentials
 
 ## Hands-On: Exploring the Stack
 
-Once the environment is running, you can explore all the key features directly from Dremio's SQL editor. Here are some examples to get you started.
+Once the environment is running, you can explore all the key features directly from Dremio's SQL editor. The following walkthrough demonstrates each feature step by step — in the same order as the included demo script (`publications/article_demo.py`).
 
-### Create Some Test Data
+### Step 1: Create Table and Insert Data
 
 ```sql
 -- Create a table on the main branch
@@ -306,47 +309,18 @@ order_id | customer   | amount  | order_date
 3        | Initech    | 890.00  | 2024-01-12
 ```
 
-### Time Travel with Snapshots
+At this point, if you check MinIO, you'll see Iceberg has created:
+- 1 Parquet file (containing the 3 rows)
+- 5 metadata files (table metadata, manifest lists, manifests)
 
-Every change to an Iceberg table creates a new snapshot. You can query the history to see all snapshots:
+### Step 2: Schema Evolution
 
-```sql
-SELECT * FROM TABLE(table_history('nessie.sales')) ORDER BY made_current_at DESC;
-```
-
-Result:
-```
-made_current_at     | snapshot_id         | parent_id           | is_current_ancestor
---------------------|---------------------|---------------------|--------------------
-2024-01-15 17:30:02 | 4465122803571422774 | 3697355837526781938 | true
-2024-01-15 17:30:01 | 3697355837526781938 | 1063678714522285507 | true
-2024-01-15 17:30:00 | 1063678714522285507 | 1602227990585108066 | true
-2024-01-15 17:29:59 | 1602227990585108066 | NULL                | true
-```
-
-Now you can use any snapshot ID to travel back in time:
-
-```sql
--- First, get the current snapshot ID
--- (the first row from table_history is the current state)
-
--- Make a change
-DELETE FROM nessie.sales WHERE amount < 1000;
-
--- Query the data BEFORE the delete using the snapshot ID you captured
-SELECT * FROM nessie.sales AT SNAPSHOT '4465122803571422774' ORDER BY order_id;
-```
-
-The deleted row (Initech) is still accessible through the old snapshot — nothing is ever truly deleted until you explicitly expire snapshots.
-
-### Schema Evolution
-
-Add columns without rewriting existing data:
+Add columns without rewriting existing data — Iceberg handles this as a metadata-only operation:
 
 ```sql
 ALTER TABLE nessie.sales ADD COLUMNS (region VARCHAR);
 
--- Old rows get NULL, new rows get the value
+-- Old rows get NULL for the new column, new rows get the value
 INSERT INTO nessie.sales VALUES (4, 'Wayne Enterprises', 5000.00, DATE '2024-01-15', 'Northeast');
 
 SELECT * FROM nessie.sales ORDER BY order_id;
@@ -362,7 +336,9 @@ order_id | customer          | amount   | order_date | region
 4        | Wayne Enterprises | 5000.00  | 2024-01-15 | Northeast
 ```
 
-### Branching — Git for Your Data
+Now we have 4 rows, with old rows showing NULL for the new `region` column.
+
+### Step 3: Branching — Git for Your Data
 
 This is where Nessie shines. Create a branch, make changes in isolation, then merge back — just like Git, but for tables.
 
@@ -370,14 +346,15 @@ This is where Nessie shines. Create a branch, make changes in isolation, then me
 -- Create a development branch
 CREATE BRANCH dev IN nessie;
 
--- Switch to the dev branch and make changes
+-- Switch to the dev branch
 USE BRANCH dev IN nessie;
 
+-- Make changes on dev
 INSERT INTO nessie.sales VALUES (5, 'Stark Industries', 12000.00, DATE '2024-01-15', 'West');
 UPDATE nessie.sales SET amount = 1600.00 WHERE order_id = 1;
 
 -- Check the dev branch — you'll see your changes
-SELECT * FROM nessie.sales ORDER BY order_id;
+SELECT * FROM nessie.sales AT BRANCH dev ORDER BY order_id;
 ```
 
 On the dev branch, you now have 5 rows with the updated amount for order 1:
@@ -392,21 +369,58 @@ order_id | customer          | amount   | order_date | region
 5        | Stark Industries  | 12000.00 | 2024-01-15 | West
 ```
 
+But main is completely unchanged:
+
 ```sql
--- When you're ready, merge dev into main
-USE BRANCH main IN nessie;
-MERGE BRANCH dev INTO main IN nessie;
+SELECT * FROM nessie.sales AT BRANCH main ORDER BY order_id;
 ```
 
-### Time Travel — Query the Past
+```
+order_id | customer          | amount   | order_date | region
+---------|-------------------|----------|------------|----------
+1        | Acme Corp         | 1500.00  | 2024-01-10 | NULL
+2        | Globex Inc        | 2300.00  | 2024-01-11 | NULL
+3        | Initech           | 890.00   | 2024-01-12 | NULL
+4        | Wayne Enterprises | 5000.00  | 2024-01-15 | Northeast
+```
 
-First, let's delete some data and then show how we can query previous states:
+Notice: order 1 still has amount 1500.00 on main, and there's no Stark Industries row. When you're ready, merge the changes:
 
 ```sql
--- Delete low-value orders
+MERGE BRANCH dev INTO main IN nessie;
+
+-- Now main has all the changes from dev
+SELECT * FROM nessie.sales AT BRANCH main ORDER BY order_id;
+```
+
+After the merge, main now has 5 rows with all the changes from dev.
+
+### Step 4: Time Travel with Snapshots
+
+Every change to an Iceberg table creates a new snapshot. First, let's check the current table history:
+
+```sql
+SELECT * FROM TABLE(table_history('nessie.sales')) ORDER BY made_current_at DESC;
+```
+
+Result (snapshot IDs will vary):
+```
+made_current_at     | snapshot_id         | parent_id           | is_current_ancestor
+--------------------|---------------------|---------------------|--------------------
+2024-01-15 18:10:05 | 5076978190796388436 | 1935811981190322217 | true
+2024-01-15 18:10:04 | 1935811981190322217 | 2460711640644440921 | true
+2024-01-15 18:10:03 | 2460711640644440921 | 7911443532024456107 | true
+2024-01-15 18:10:02 | 7911443532024456107 | 4627838511323951707 | true
+2024-01-15 18:10:01 | 4627838511323951707 | NULL                | true
+```
+
+Now let's make a destructive change and then use time travel to see the data before:
+
+```sql
+-- Delete low-value orders (this removes Initech)
 DELETE FROM nessie.sales WHERE amount < 1000;
 
--- Current state shows only 4 rows (Initech is gone)
+-- Current state shows only 4 rows
 SELECT * FROM nessie.sales ORDER BY order_id;
 ```
 
@@ -419,17 +433,28 @@ order_id | customer          | amount   | order_date | region
 5        | Stark Industries  | 12000.00 | 2024-01-15 | West
 ```
 
-```sql
--- Query table history to find snapshot IDs
-SELECT * FROM TABLE(table_history('nessie.sales')) ORDER BY made_current_at DESC;
+Initech is gone. But we can still query the data before the DELETE using the snapshot ID we captured earlier:
 
--- Time travel to see data before the DELETE (using the previous snapshot ID)
-SELECT * FROM nessie.sales AT SNAPSHOT '1288762194691800129' ORDER BY order_id;
+```sql
+-- Time travel to see data before the DELETE
+SELECT * FROM nessie.sales AT SNAPSHOT '5076978190796388436' ORDER BY order_id;
 ```
 
-### Tagging — Named Snapshots for Easy Reference
+```
+order_id | customer          | amount   | order_date | region
+---------|-------------------|----------|------------|----------
+1        | Acme Corp         | 1600.00  | 2024-01-10 | NULL
+2        | Globex Inc        | 2300.00  | 2024-01-11 | NULL
+3        | Initech           | 890.00   | 2024-01-12 | NULL
+4        | Wayne Enterprises | 5000.00  | 2024-01-15 | Northeast
+5        | Stark Industries  | 12000.00 | 2024-01-15 | West
+```
 
-Create immutable snapshots of your data at important points:
+The deleted row (Initech) is still accessible through the old snapshot — nothing is ever truly deleted until you explicitly expire snapshots.
+
+### Step 5: Tagging — Named Snapshots for Easy Reference
+
+Instead of remembering snapshot IDs, you can create named tags:
 
 ```sql
 -- Tag the current state
@@ -492,12 +517,13 @@ warehouse/
         └── snap-...-avro                         # Snapshot manifests
 ```
 
-**What you'll observe:**
+**What you'll observe after each step:**
 
-- **After CREATE TABLE + INSERT**: 1 Parquet file, 5 metadata files (~22 KB total)
-- **After ADD COLUMNS + INSERT**: 2 Parquet files, 9 metadata files (~45 KB total)
-- **After branching, UPDATE, MERGE**: 4 Parquet files, 16 metadata files (~91 KB total)
-- **After Time Travel + Tagging**: 6 Parquet files, 23 metadata files (~142 KB total)
+- **Step 1 (CREATE + INSERT)**: 1 Parquet file, 5 metadata files (~22 KB total)
+- **Step 2 (Schema Evolution)**: 2 Parquet files, 9 metadata files (~45 KB total)
+- **Step 3 (Branching + Merge)**: 4 Parquet files, 16 metadata files (~91 KB total)
+- **Step 4 (Time Travel)**: 5 Parquet files, 19 metadata files (~110 KB total)
+- **Step 5 (Tagging)**: 6 Parquet files, 23 metadata files (~142 KB total)
 
 Each operation adds files — nothing is modified in place. This immutability is what enables time travel and branching.
 
@@ -515,15 +541,17 @@ Use the branch dropdown to switch views. After the demo, you'll see:
 - **Branches**: `main`, `dev`
 - **Tags**: `v1_0_release`
 
-The commit history shows each operation:
+The commit history shows each operation (most recent first):
 ```
-- DELETE on TABLE sales
-- UPDATE on TABLE sales
-- INSERT on TABLE sales
-- INSERT on TABLE sales
-- ALTER on TABLE sales
-- INSERT on TABLE sales
-- CREATE on TABLE sales
+- INSERT on TABLE sales     # Step 5: LexCorp
+- DELETE on TABLE sales     # Step 4: Removed low-value orders
+- MERGE BRANCH dev          # Step 3: Merged dev into main
+- UPDATE on TABLE sales     # Step 3: Updated amount on dev
+- INSERT on TABLE sales     # Step 3: Stark Industries on dev
+- INSERT on TABLE sales     # Step 2: Wayne Enterprises
+- ALTER on TABLE sales      # Step 2: Added region column
+- INSERT on TABLE sales     # Step 1: Initial 3 rows
+- CREATE on TABLE sales     # Step 1: Created table
 ```
 
 This is where you can see the connection: Nessie tracks which metadata file is current for each branch, and that metadata file (in MinIO) describes which Parquet files contain the data.
